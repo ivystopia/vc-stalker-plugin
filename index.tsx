@@ -1,4 +1,4 @@
-import { addContextMenuPatch, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
+import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType, PluginDef } from "@utils/types";
 import { Menu, Toasts, UserStore, MessageStore, RestAPI, ChannelStore } from "@webpack/common";
@@ -24,7 +24,6 @@ async function importLoggedMessages() {
     }
     return module ? module.loggedMessages : null;
 }
-
 
 const settings = definePluginSettings({
     whitelistedIds: {
@@ -59,7 +58,6 @@ const settings = definePluginSettings({
     }
 });
 
-
 const switchToMsg = (gid: string, cid?: string, mid?: string) => {
     if (gid) findByProps("transitionToGuildSync").transitionToGuildSync(gid);
     if (cid) findByProps("selectChannel").selectChannel({
@@ -87,6 +85,25 @@ let oldUsers: {
 } = {};
 let loggedMessages: Record<string, Message> = {};
 
+const contextMenuPatch: NavContextMenuPatchCallback = (children, props) => {
+    if (!props || props?.user?.id === UserStore.getCurrentUser().id) return;
+
+    if (!children.some(child => child?.props?.id === "stalker-v1")) {
+        children.push(
+            <Menu.MenuSeparator />,
+            <Menu.MenuItem
+                id="stalker-v1"
+                label={isInWhitelist(props.user.id) ? "Stop Stalking User" : "Stalk User"}
+                action={() =>
+                    isInWhitelist(props.user.id)
+                        ? _plugin.unStalkuser(props.user.id)
+                        : _plugin.stalkUser(props.user.id)
+                }
+            />
+        );
+    }
+};
+
 const _plugin: PluginDef & Record<string, any> = {
     name: "Stalker",
     description: "This plugin allows you to stalk users, made for delusional people like myself.",
@@ -98,6 +115,9 @@ const _plugin: PluginDef & Record<string, any> = {
     ],
     dependencies: ["MessageLoggerEnhanced"],
     settings,
+    contextMenus: {
+        "user-context": contextMenuPatch
+    },
     flux: {
         MESSAGE_CREATE: (payload: MessageCreatePayload) => {
             if (!payload.message || !payload.message.author || !payload.message.channel_id || !settings.store.trackSentMessage) return;
@@ -264,12 +284,10 @@ const _plugin: PluginDef & Record<string, any> = {
             oldUsers[id] = body;
             logger.info(`Cached user ${id} with name ${oldUsers[id].user.globalName || oldUsers[id].user.username} for further usage.`);
         }
-        addContextMenuPatch("user-context", contextMenuPatch);
-
         this.loggedMessages = await importLoggedMessages();
     },
     stop() {
-        removeContextMenuPatch("user-context", contextMenuPatch);
+        // No need to manually remove context menus; Vencord handles this automatically.
     },
     async stalkUser(id: string) {
         Toasts.show({
@@ -298,21 +316,6 @@ const _plugin: PluginDef & Record<string, any> = {
         });
         removeFromWhitelist(id);
         delete oldUsers[id];
-    }
-};
-
-const contextMenuPatch: NavContextMenuPatchCallback = (children, props) => {
-    if (!props || props?.user?.id === UserStore.getCurrentUser().id) return;
-
-    if (!children.some(child => child?.props?.id === "stalker-v1")) {
-        children.push(
-            <Menu.MenuSeparator />,
-
-            <Menu.MenuItem
-                id="stalker-v1"
-                label={isInWhitelist(props.user.id) ? "Stop Stalking User" : "Stalk User"}
-                action={() => isInWhitelist(props.user.id) ? _plugin.unStalkuser(props.user.id) : _plugin.stalkUser(props.user.id)} />
-        );
     }
 };
 
